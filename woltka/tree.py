@@ -556,7 +556,7 @@ def find_lca(taxa, tree):
     return lineage[-1]
 
 
-def find_taxa_counts(taxa, tree):
+def find_taxon_counts(taxa, tree):
     """Count up the number of appearances of given taxa
 
     Parameters
@@ -568,13 +568,11 @@ def find_taxa_counts(taxa, tree):
 
     Returns
     -------
-    list of dict
-        Counts of lineage from root to query taxon.
+    dict
+        Counts of lineage.
     """
-    taxa_ = list(taxa)
-
-    counts = []
-    for taxon in taxa_:
+    counts = {}
+    for taxon in taxa:
         lineage = get_lineage(taxon, tree)
         if lineage is None:
             # todo: better handling for None values
@@ -582,14 +580,81 @@ def find_taxa_counts(taxa, tree):
         # if parent is self
         if len(lineage) == 2 and lineage[0] == lineage[1]:
             lineage.pop()
-        while len(counts) < len(lineage):
-            counts.append({})
-        for l in range(0, len(lineage)):
-            if lineage[l] in counts[l]:
-                counts[l][lineage[l]] += 1
+        for l in lineage:
+            if l in counts:
+                counts[l] += 1
             else:
-                counts[l][lineage[l]] = 1
+                counts[l] = 1
     return counts
+
+
+def leaf_counts(taxa, tree):
+    """Return the number of leaves
+
+    Parameters
+    ----------
+    taxa : list of str
+       Input taxon list.
+    tree : dict
+        Taxonomy tree.
+
+    Returns
+    -------
+    dict or None
+       Counts of the number of leaves under each taxon in taxa
+
+    TODO
+    ----
+    How to do this without reversing/traversing the entire tree?
+    Right now, I reverse the tree and traverse nodes below each taxa.
+    Is there a faster implementation?
+
+    Should I store the reversed tree some place so no recalculation?
+    """
+    # reversing the child parent relationship to parent child
+    reversed_tree = {}
+    for child, parent in tree.items():
+        if child != parent:
+            if parent in reversed_tree:
+                reversed_tree[parent][0].append(child)
+            else:
+                reversed_tree[parent] = [[child], 0]
+
+    counts = {}
+    for taxon in taxa:
+        count, reversed_tree = _get_leaf_counts(taxon, reversed_tree)
+        counts[taxon] = count
+
+    return counts
+
+
+def _get_leaf_counts(taxon, reversed_tree):
+    """Return the number of leaves below toSearch(taxon).
+
+    Parameters
+    ----------
+    taxon : str
+       Input taxon.
+    reversed_tree : dict
+        Taxonomy tree, parent to child mapping
+
+    Returns
+    -------
+    tuple
+        leaf count of toSearch, updated tree
+    """
+    # dynamic programming and recursive dfs.
+    if taxon in reversed_tree:
+        if reversed_tree[taxon][1] != 0:
+            return reversed_tree[taxon][1], reversed_tree
+        else:
+            for t in reversed_tree[taxon][0]:
+                counts = _get_leaf_counts(t, reversed_tree)
+                reversed_tree[taxon][1] += counts[0]
+                reversed_tree = counts[1]
+            return reversed_tree[taxon][1], reversed_tree
+    else:
+        return 1, reversed_tree
 
 
 def majority_rules(taxa, tree, th=.8):
@@ -611,32 +676,41 @@ def majority_rules(taxa, tree, th=.8):
 
     TODO
     ----
-    Very similar to majority in classify.py
+    Can be rather stringent. Need to benchmark.
     """
-    counts = find_taxa_counts(taxa, tree)
-    for i in range(0, len(counts)):
-        if all(v/len(taxa) < th for k, v in counts[i].items()):
-            break
-    for k, v in counts[i-1].items():
-        if v/len(taxa) >= th:
-            return k
+    leaves = leaf_counts(taxa, tree)
+    counts = find_taxon_counts(taxa, tree)
+
+    taxa_length = len(taxa)
+    majority_taxon = None
+    previous_cutoff = 0
+    for taxon, n in sorted(counts.items(), key=lambda x: x[1], reverse=True):
+        taxon_cutoff = n/leaves[taxon]
+        if n >= taxa_length * th and previous_cutoff < taxon_cutoff:
+            previous_cutoff = taxon_cutoff
+            majority_taxon = taxon
+        else:
+            return majority_taxon
 
     # no taxon meets th requirements
     return None
 
 
-def dynamic_lca(tree):
+def dynamic_lca(taxa, tree):
     """Find lowest common ancestor (LCA) of all pairwise comparisons in tree
 
     Parameters
     ----------
+    taxa : list of str
+       Input taxon list.
     tree : dict
         Taxonomy tree.
 
     Returns
     -------
     dict
-        LCA of all pairwise comparisons in tree
+        LCA of all pairwise comparisons in a subset of the tree containing the
+        taxa lineages.
     """
     lca = dict()
 
@@ -661,38 +735,47 @@ def dynamic_lca(tree):
         """
         if lca[u][v]:
             return lca[u][v]
+        elif u == v:
+            lca[u][v] = {u}
+            return {u}
         else:
-            if u == v:
-                lca[u][v] = set()
-                lca[u][v].add(u)
-            else:
-                a = set()
-                p = tree[u]
-                if p != u:
-                    a.update(compute_lca(p, v))
-                q = tree[v]
-                if q != v:
-                    a.update(compute_lca(u, q))
-                a.update(compute_lca(p, q))
-                b = set()
-                for a1 in a:
-                    for a2 in a:
-                        if a1 != a2:
-                            b.update(lca[a1][a2])
-                lca[u][v] = a.difference(b)
-                lca[v][u] = lca[u][v]
-                return lca[u][v]
+            a = set()
+            # in a tree, the LCA of a child is the LCA of a parent
+            # find the LCA of the parents
+            p = tree[u]
+            if p != u:
+                a.update(compute_lca(p, v))
+            q = tree[v]
+            if q != v:
+                a.update(compute_lca(u, q))
+            a.update(compute_lca(p, q))
+
+            # ensure that the LCA found are true LCA
+            b = set()
+            a_ = list(a)
+            for i, a1 in enumerate(a_):
+                for a2 in a_[i+1:]:
+                    b.update(lca[a1][a2])
+            lca[u][v] = a.difference(b)
+            # due to symmetry, needed for future lookups
+            lca[v][u] = lca[u][v]
+            return lca[u][v]
+
+    # compute items in subtree:
+    subset = set()
+    for taxon in taxa:
+        for l in get_lineage(taxon, tree):
+            subset.add(l)
 
     # initialize
-    for u in tree:
+    for u in subset:
         lca[u] = dict()
-        for v in tree:
+        for v in subset:
             lca[u][v] = set()
 
     # do pairwise comparisons
-    for u in tree:
-        for v in tree:
-            print("\t", end="")
+    for u in subset:
+        for v in subset:
             compute_lca(u, v)
 
     return lca

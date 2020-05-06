@@ -16,7 +16,7 @@ from tempfile import mkdtemp
 from woltka.tree import (
     read_names, read_nodes, read_lineage, read_newick, read_rank_table,
     fill_root, get_lineage, get_lineage_gg, find_rank, find_lca, dynamic_lca,
-    find_taxa_counts, majority_rules)
+    find_taxon_counts, majority_rules, leaf_counts, _get_leaf_counts)
 
 
 # A small test taxon set containing 15 proteobacterial species
@@ -559,11 +559,18 @@ class TreeTests(TestCase):
                '32066	2',
                '2157	1')
         tree = read_nodes(tsv)[0]
-        obs = dynamic_lca(tree)
+        obs = dynamic_lca(tree.keys(), tree)
         for taxa1 in tree.keys():
             for taxa2 in tree.keys():
                 lca = {find_lca([taxa1, taxa2], tree)}
                 self.assertEqual(obs[taxa1][taxa2], lca)
+
+        obs = dynamic_lca([], tree)
+        self.assertEqual(obs, {})
+
+        obs = dynamic_lca(["1", "1224", "2157"], tree)
+        self.assertIsNotNone(obs.get("2"))
+        self.assertIsNone(obs.get("1236"))
 
     def test_find_taxa_counts(self):
         # simple tree
@@ -575,12 +582,12 @@ class TreeTests(TestCase):
                '32066	2',
                '2157	1')
         tree = read_nodes(tsv)[0]
-        # find_taxa_counts(tree.keys(), tree)
-        obs, exp = ['1'], [{'1': 1}]
-        self.assertEqual(find_taxa_counts(obs, tree), exp)
+        # find_taxon_counts(tree.keys(), tree)
+        obs, exp = ['1'], {'1': 1}
+        self.assertEqual(find_taxon_counts(obs, tree), exp)
         obs = ['1', '2', '1236']
-        exp = [{'1': 3}, {'2': 2}, {'1224': 1}, {'1236': 1}]
-        self.assertEqual(find_taxa_counts(obs, tree), exp)
+        exp = {'1': 3, '2': 2, '1224': 1, '1236': 1}
+        self.assertEqual(find_taxon_counts(obs, tree), exp)
 
     def test_majority_rules(self):
         # simple tree
@@ -592,9 +599,46 @@ class TreeTests(TestCase):
                '32066	2',
                '2157	1')
         tree = read_nodes(tsv)[0]
+        test = list(tree.keys())
+        test.extend(['1224', '1224', '1224'])
+        self.assertEqual(majority_rules(test, tree), '2')
+        self.assertEqual(majority_rules(test, tree, .4), '1224')
         self.assertEqual(majority_rules(tree.keys(), tree), '1')
         self.assertEqual(majority_rules(tree.keys(), tree, 1.01), None)
-        self.assertEqual(majority_rules(tree.keys(), tree, .4), '1224')
+
+    def test_leaf_counts(self):
+        # simple tree
+        tsv = ('1	1',
+               '2	1',
+               '1224	2',
+               '1236	1224',
+               '28211	1224',
+               '32066	2',
+               '2157	1')
+        tree = read_nodes(tsv)[0]
+        exp = {'1': 4, '2': 3, '1224': 2, '1236': 1, '28211': 1, '32066': 1,
+               '2157': 1}
+        self.assertEqual(leaf_counts(tree.keys(), tree), exp)
+        self.assertEqual(leaf_counts([], tree), {})
+
+    def test__get_leaf_counts(self):
+        # simple tree
+        # tsv = ('1	1',
+        #        '2	1',
+        #        '1224	2',
+        #        '1236	1224',
+        #        '28211	1224',
+        #        '32066	2',
+        #        '2157	1')
+        # reversed_tree based on above
+
+        reversed_tree = {'1': ['2', '2157'], '2': ['1224', '32066'],
+                         '1224': ['1236', '28211']}
+        reformat_tree = {k: [v, 0] for k, v in reversed_tree.items()}
+        exp = {'1': 4, '2': 3, '1224': 2, '1236': 1, '28211': 1, '32066': 1,
+               '2157': 1}
+        for taxon, count in exp.items():
+            self.assertEqual(_get_leaf_counts(taxon, reformat_tree)[0], count)
 
 
 if __name__ == '__main__':
