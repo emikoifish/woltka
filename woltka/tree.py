@@ -519,7 +519,6 @@ def find_lca(taxa, tree):
     reasoning and algorithm design.
     """
     taxa_ = list(taxa)
-
     # get lineage of first taxon
     lineage = get_lineage(taxa_[0], tree)
     if lineage is None:
@@ -621,7 +620,7 @@ def leaf_counts(taxa, tree):
                 reversed_tree[parent] = [[child], 0]
 
     counts = {}
-    for taxon in taxa:
+    for taxon in reversed_tree.keys():
         count, reversed_tree = _get_leaf_counts(taxon, reversed_tree)
         counts[taxon] = count
 
@@ -657,7 +656,7 @@ def _get_leaf_counts(taxon, reversed_tree):
         return 1, reversed_tree
 
 
-def majority_rules(taxa, tree, th=.8):
+def majority_rules(taxa, tree, leaves, method, th=.1):
     """Select taxon from list by majority rule.
 
     Parameters
@@ -666,8 +665,10 @@ def majority_rules(taxa, tree, th=.8):
        Input taxon list.
     tree : dict
         Taxonomy tree.
-    th : float, optional
+    th : float, optionals
        Threshold of majority, range = (0.5, 1.0].
+    method: str
+        Classification method to use, lca, majority, taxoncutoff
 
     Returns
     -------
@@ -678,22 +679,38 @@ def majority_rules(taxa, tree, th=.8):
     ----
     Can be rather stringent. Need to benchmark.
     """
-    leaves = leaf_counts(taxa, tree)
+    # import click
+    # click.echo(str(th)+ " " +str(method))
     counts = find_taxon_counts(taxa, tree)
+
+    totalLeaves = 1
+    for taxon, n in sorted(counts.items(), key=lambda x: x[1], reverse=True):
+        if totalLeaves < leaves[taxon]:
+            totalLeaves = leaves[taxon]
+
+    totalCounts = sum(counts.values())
 
     taxa_length = len(taxa)
     majority_taxon = None
     previous_cutoff = 0
     for taxon, n in sorted(counts.items(), key=lambda x: x[1], reverse=True):
-        taxon_cutoff = n/leaves[taxon]
-        if n >= taxa_length * th and previous_cutoff < taxon_cutoff:
-            previous_cutoff = taxon_cutoff
-            majority_taxon = taxon
-        else:
-            return majority_taxon
+        if taxon in leaves:
+            # average cutoff
+            taxon_cutoff = ((n/totalCounts) + (leaves[taxon]/totalLeaves))/2
+            if method == "major":
+                if taxon_cutoff >= th:
+                    previous_cutoff = taxon_cutoff
+                    majority_taxon = taxon
+            elif method == "taxoncutoff":
+                if previous_cutoff <= taxon_cutoff:
+                    previous_cutoff = taxon_cutoff
+                    majority_taxon = taxon
+            else:
+                if n >= taxa_length * th and previous_cutoff <= taxon_cutoff:
+                    previous_cutoff = taxon_cutoff
+                    majority_taxon = taxon
 
-    # no taxon meets th requirements
-    return None
+    return majority_taxon
 
 
 def dynamic_lca(taxa, tree):

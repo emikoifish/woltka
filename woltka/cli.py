@@ -123,8 +123,12 @@ def gotu(ctx, **kwargs):
     '--above/--no-above', default=False,
     help='Allow assigning to a classification unit higher than given rank.')
 @click.option(
-    '--major', type=click.IntRange(51, 99),
+    '--major', type=click.IntRange(0, 100),
+    # type=click.IntRange(51, 99),
     help='Majority-rule assignment percentage threshold.')
+@click.option(
+    '--method', type=click.STRING,
+    help='Classification method to use: lca, majority, taxoncutoff.')
 @click.option(
     '--ambig/--no-ambig', default=True,
     help='Allow assigning one sequence to multiple classification units.')
