@@ -697,7 +697,7 @@ def majority_rules(taxa, tree, leaves, method, th=.1):
         if taxon in leaves:
             # average cutoff
             taxon_cutoff = ((n/totalCounts) + (leaves[taxon]/totalLeaves))/2
-            if method == "major":
+            if method == "majority":
                 if taxon_cutoff >= th:
                     previous_cutoff = taxon_cutoff
                     majority_taxon = taxon
