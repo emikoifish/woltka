@@ -30,7 +30,7 @@ from .classify import (
     demultiplex)
 from .tree import (
     read_names, read_nodes, read_lineage, read_newick, read_rank_table,
-    fill_root)
+    fill_root, leaf_counts)
 from .ordinal import Ordinal, read_gene_coords, whether_prefix
 from .biom import profile_to_biom, write_biom
 
@@ -55,6 +55,7 @@ def workflow(input_fp:      str,
              ranks:         str = None,
              above:        bool = False,
              major:        bool = None,
+             method:       str = None,
              ambig:        bool = True,
              subok:        bool = True,
              deidx:        bool = False,
@@ -109,8 +110,8 @@ def workflow(input_fp:      str,
     # classify query sequences
     data = classify(
         mapper, files, samples, input_fmt, demux, tree, rankdic, namedic, root,
-        ranks, rank2dir, outmap_zip, above, major, ambig, subok, deidx, lines,
-        stratmap)
+        ranks, rank2dir, outmap_zip, above, major, method, ambig, subok, deidx,
+        lines, stratmap)
 
     # write output profiles
     write_profiles(
@@ -135,6 +136,7 @@ def classify(mapper:  object,
              outzip:     str = None,
              above:     bool = False,
              major:      int = None,
+             method:     str = None,
              ambig:      str = True,
              subok:     bool = None,
              deidx:     bool = False,
@@ -181,6 +183,8 @@ def classify(mapper:  object,
     major : int, optional
         Perform majority-rule assignment based on this percentage threshold.
         Range: [51, 99].
+    method: str, optional
+        Classification method to use (lca, majority, taxoncutoff)
     ambig : bool, optional
         Allow one sequence to be assigned to multiple classification units at
         the same rank. The profile will be normalized by the number of matches
@@ -204,9 +208,9 @@ def classify(mapper:  object,
 
     # assignment parameters
     kwargs = {'tree': tree, 'rankdic': rankdic, 'root':  root, 'above': above,
-              'major': major and major / 100, 'ambig': ambig, 'subok': subok,
-              'namedic': namedic, 'rank2dir': rank2dir, 'outzip': outzip if
-              outzip != 'none' else None}
+              'major': major and major / 100, 'method': method, 'ambig': ambig,
+              'subok': subok, 'namedic': namedic, 'rank2dir': rank2dir,
+              'outzip': outzip if outzip != 'none' else None}
 
     # current sample Id
     csample = None
@@ -622,6 +626,7 @@ def assign_readmap(rmap:     dict,
                    root:      str = None,
                    above:    bool = False,
                    major:   float = None,
+                   method:    str = None,
                    ambig:     str = True,
                    subok:    bool = None,
                    strata:   dict = None):
@@ -655,6 +660,8 @@ def assign_readmap(rmap:     dict,
     major : float, optional
         Majority-rule assignment threshold (available only with a fixed rank
         and not above or ambig).
+    method: str, optional
+        Classification method to use (lca, majority, taxoncutoff)
     ambig : bool, optional
         Count occurrence of each possible assignment instead of targeting one
         assignment (available only with a fixed rank and not above).
@@ -672,8 +679,9 @@ def assign_readmap(rmap:     dict,
         assigner = assign_free
         args = (tree, root, subok)
     else:
+        leaves = leaf_counts(tree.values(), tree)
         assigner = assign_rank
-        args = (rank, tree, rankdic, root, above, major, ambig)
+        args = (rank, tree, rankdic, root, above, major, ambig, leaves, method)
 
     # call assigner
     asgmt = {}
@@ -740,8 +748,8 @@ def write_profiles(data:        dict,
     -----
     The boolean parameter `is_biom` can be one of the three values:
     - `None` (default): To be auto-determined based on the user-supplied output
-    filename extension. If ".biom", do BIOM, otherwise do TSV. If output path is
-    a directory, do BIOM by default.
+    filename extension. If ".biom", do BIOM, otherwise do TSV. If output path
+    is a directory, do BIOM by default.
     - `True` (command-line flag `--to-biom`): BIOM format.
     - `False` (command-line flag `--to-tsv`): TSV format.
     """

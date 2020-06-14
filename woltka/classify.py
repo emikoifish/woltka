@@ -13,7 +13,7 @@ hierarchical classification system.
 """
 
 from .util import count_list
-from .tree import find_rank, find_lca
+from .tree import find_rank, find_lca, majority_rules
 
 
 def assign_none(subs, ambig=False):
@@ -66,7 +66,7 @@ def assign_free(subs, tree, root=None, subok=False):
 
 
 def assign_rank(subs, rank, tree, rankdic, root=None, above=False, major=None,
-                ambig=False):
+                ambig=False, leaves=None, method=None):
     """Assign query to a fixed rank in a classification system.
 
     Parameters
@@ -85,6 +85,8 @@ def assign_rank(subs, rank, tree, rankdic, root=None, above=False, major=None,
         Allow assignment above rank.
     major : float, optional
         Majority-rule assignment threshold.
+    method: str, optional
+        Classification method to use (lca, majority, taxoncutoff)
     ambig : bool, optional
         Count occurrence of each taxon at rank.
 
@@ -97,6 +99,14 @@ def assign_rank(subs, rank, tree, rankdic, root=None, above=False, major=None,
     tset = set(taxa)
     if len(tset) == 1:
         return taxa[0]
+    elif method:
+        if None in tset:
+            return None
+        if method == "lca":
+            lca = find_lca(tset, tree)
+        else:
+            lca = majority_rules(tset, tree, leaves, method, major)
+        return None if lca == root else lca
     elif major:
         return majority(taxa, major)
     elif above:
